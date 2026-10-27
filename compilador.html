@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Compilador de marcadores</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;700&display=swap" rel="stylesheet">
+<!--
+  Convierte una o varias imágenes en un archivo .mind para anclaje.html.
+  Ábrelo DESDE GITHUB PAGES (https://tu-usuario.github.io/ra-muebles/compilador.html)
+  en Chrome o Edge de ordenador. Abierto con doble clic puede no funcionar.
+  Si compilas varias imágenes, cada una recibe un número (0, 1, 2…) que se usa en el QR.
+-->
+<style>
+  :root {
+    --tape: #F5C518; --tape-ink: #1A1A12;
+    --bg: #E7EAE4; --surface: #F7F8F5; --ink: #1E2622; --muted: #5B655F; --line: #C5CBC3;
+    --ok: #2E6B3F; --warn: #A3271B;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1C211F; --surface: #262C29; --ink: #E9ECE7; --muted: #9AA49E; --line: #3A423E;
+            --ok: #7CC58F; --warn: #F08A7E; color-scheme: dark; }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 400 1.05rem/1.45 "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+  h1 { margin: 0 0 0.4rem; font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1; }
+  .intro { margin: 0 0 1.5rem; color: var(--muted); }
+
+  .soltar { border: 2px dashed var(--line); background: var(--surface); padding: 2rem 1rem; text-align: center; }
+  .soltar.encima { border-color: var(--tape); }
+  .soltar p { margin: 0 0 0.75rem; font-size: 1.2rem; }
+
+  .lista { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.6rem;
+           grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .lista li { background: var(--surface); border: 1px solid var(--line); padding: 0.5rem; position: relative; }
+  .lista img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; display: block; }
+  .lista b { position: absolute; top: 0.4rem; left: 0.4rem; background: var(--tape); color: var(--tape-ink);
+             padding: 0.1rem 0.5rem; font-size: 1rem; }
+  .lista span { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; word-break: break-all; }
+
+  .btn { font-family: inherit; font-weight: 700; font-size: 1.1rem; line-height: 1; cursor: pointer;
+         padding: 0.85rem 1.3rem; border: 2px solid var(--ink); background: transparent; color: var(--ink); }
+  .btn.principal { background: var(--tape); color: var(--tape-ink); border-color: var(--tape); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn:focus-visible { outline: 3px solid var(--tape); outline-offset: 2px; }
+  .acciones { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1.25rem 0; }
+
+  .progreso { height: 22px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+  .progreso div {
+    height: 100%; width: 0%; transition: width 0.3s;
+    background:
+      repeating-linear-gradient(90deg, var(--tape-ink) 0 1px, transparent 1px 10px) top left / 100% 6px no-repeat,
+      var(--tape);
+  }
+  .estado { margin: 0.5rem 0 0; min-height: 1.5em; font-weight: 500; }
+  .estado.mal { color: var(--warn); }
+  .estado.bien { color: var(--ok); }
+  .nota { color: var(--muted); font-size: 0.95rem; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Compilador de marcadores</h1>
+  <p class="intro">Convierte la imagen de la lámina en el archivo <em>marcador.mind</em> que necesita el visor con anclaje. Usa imágenes JPG o PNG de unos 800–1000 px.</p>
+
+  <div class="soltar" id="soltar">
+    <p>Arrastra aquí una o varias imágenes</p>
+    <button class="btn" type="button" id="elegir">Elegir imágenes</button>
+    <input type="file" id="archivos" accept="image/png,image/jpeg" multiple hidden>
+  </div>
+  <ul class="lista" id="lista"></ul>
+
+  <div class="acciones">
+    <button class="btn principal" type="button" id="compilar" disabled>Compilar</button>
+    <button class="btn" type="button" id="descargar" hidden>Descargar marcador.mind</button>
+  </div>
+
+  <div class="progreso" aria-hidden="true"><div id="barra"></div></div>
+  <p class="estado" id="estado" aria-live="polite">Cargando el compilador…</p>
+
+  <p class="nota">Si compilas varias imágenes en un mismo archivo, el número amarillo de cada una es el que se indica en el QR («Imagen n.º» en el generador). La primera es la 0.</p>
+</main>
+
+<script type="module">
+  const $ = id => document.getElementById(id);
+  let Compiler = null, imagenes = [], datos = null;
+
+  function estado(txt, tipo) { const e = $('estado'); e.textContent = txt; e.className = 'estado' + (tipo ? ' ' + tipo : ''); }
+
+  // Comprobaciones previas
+  const gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+  if (location.protocol === 'file:') {
+    estado('Abre esta página desde GitHub Pages (https://…), no con doble clic.', 'mal');
+  }
+
+  try {
+    ({ Compiler } = await import('https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js'));
+    if (location.protocol !== 'file:') {
+      estado(gl ? 'Compilador listo. Añade una imagen.' :
+        'Este navegador no tiene WebGL activado: la compilación será muy lenta o no arrancará. Activa la aceleración por hardware.', gl ? '' : 'mal');
+    }
+  } catch (e) {
+    estado('No se pudo cargar el compilador. Revisa la conexión o desactiva el bloqueador de anuncios.', 'mal');
+  }
+
+  // Selección de imágenes
+  $('elegir').addEventListener('click', () => $('archivos').click());
+  $('archivos').addEventListener('change', e => anadir(e.target.files));
+  const soltar = $('soltar');
+  ['dragenter', 'dragover'].forEach(t => soltar.addEventListener(t, e => { e.preventDefault(); soltar.classList.add('encima'); }));
+  ['dragleave', 'drop'].forEach(t => soltar.addEventListener(t, e => { e.preventDefault(); soltar.classList.remove('encima'); }));
+  soltar.addEventListener('drop', e => anadir(e.dataTransfer.files));
+
+  async function anadir(files) {
+    for (const f of files) {
+      if (!/^image\/(png|jpeg)$/.test(f.type)) continue;
+      const img = await cargarImagen(f);
+      imagenes.push({ nombre: f.name, img: await reducir(img) });
+    }
+    pintar();
+  }
+
+  function cargarImagen(f) {
+    return new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = URL.createObjectURL(f); });
+  }
+
+  // Imágenes muy grandes atascan la compilación: se reducen a 1000 px como máximo
+  function reducir(img) {
+    const max = 1000, k = Math.min(1, max / Math.max(img.width, img.height));
+    if (k === 1) return Promise.resolve(img);
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.src = c.toDataURL('image/jpeg', 0.92); });
+  }
+
+  function pintar() {
+    const l = $('lista'); l.innerHTML = '';
+    imagenes.forEach((x, n) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<b>${n}</b>`;
+      const im = x.img.cloneNode(); im.alt = x.nombre; li.appendChild(im);
+      const s = document.createElement('span'); s.textContent = `${x.nombre} · ${x.img.width}×${x.img.height}px`; li.appendChild(s);
+      l.appendChild(li);
+    });
+    $('compilar').disabled = !imagenes.length || !Compiler;
+    $('descargar').hidden = true; datos = null;
+  }
+
+  // Compilación
+  $('compilar').addEventListener('click', async () => {
+    $('compilar').disabled = true; $('descargar').hidden = true;
+    const inicio = Date.now();
+    let ultimo = 0;
+    const vigia = setInterval(() => {
+      const s = Math.round((Date.now() - inicio) / 1000);
+      if (ultimo === 0 && s > 90) estado(`Sigue en 0 % tras ${s} s. Prueba en Chrome con la aceleración por hardware activada, o en otro ordenador.`, 'mal');
+      else estado(`Compilando… ${Math.floor(ultimo)} % · ${s} s (no cambies de pestaña)`);
+    }, 1000);
+    try {
+      const compilador = new Compiler();
+      await compilador.compileImageTargets(imagenes.map(x => x.img), p => { ultimo = p; $('barra').style.width = p + '%'; });
+      datos = await compilador.exportData();
+      clearInterval(vigia);
+      $('barra').style.width = '100%';
+      estado(`Listo en ${Math.round((Date.now() - inicio) / 1000)} s. Descarga el archivo y súbelo a la carpeta marcadores/.`, 'bien');
+      $('descargar').hidden = false;
+    } catch (e) {
+      clearInterval(vigia);
+      estado('Error al compilar: ' + (e && e.message ? e.message : e) + '. Prueba con otra imagen o en otro navegador.', 'mal');
+    }
+    $('compilar').disabled = false;
+  });
+
+  $('descargar').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([datos]));
+    a.download = 'marcador.mind';
+    a.click();
+  });
+</script>
+</body>
+</html>
