@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Visor de muebles en realidad aumentada</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;700&display=swap" rel="stylesheet">
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!--
+  CÓMO SE USA
+  ───────────
+  Este único archivo sirve para TODOS los muebles. El modelo se elige en la URL:
+
+    index.html?m=modelos/mesilla-ejemplo.glb&t=Mesilla&a=Lucía%20Pérez
+
+    m = ruta del archivo .glb (dentro de la carpeta modelos/)
+    t = nombre del mueble          a = autor/a (opcional)
+
+  Si no se indica nada, se carga la mesilla de ejemplo.
+  La escala está BLOQUEADA a 1:1 (ar-scale="fixed"): el alumnado no puede
+  agrandar ni encoger el mueble con los dedos en el modo RA.
+-->
+<style>
+  :root {
+    --tape: #F5C518;       /* cinta métrica */
+    --tape-ink: #1A1A12;
+    --bg: #E7EAE4;         /* tablero melamina gris */
+    --surface: #F7F8F5;
+    --ink: #1E2622;
+    --muted: #5B655F;
+    --line: #C5CBC3;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1C211F;
+      --surface: #262C29;
+      --ink: #E9ECE7;
+      --muted: #9AA49E;
+      --line: #3A423E;
+      color-scheme: dark;
+    }
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 1rem 1.25rem 0.5rem;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(1.9rem, 7vw, 2.8rem);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .autor { margin: 0.3rem 0 0; color: var(--muted); font-size: 1.05rem; }
+
+  model-viewer {
+    flex: 1;
+    width: 100%;
+    min-height: 260px;
+    background: transparent;
+    --poster-color: transparent;
+  }
+  model-viewer:focus-visible { outline: 3px solid var(--tape); outline-offset: -3px; }
+
+  /* Botón RA: dentro del visor */
+  .boton-ra {
+    position: absolute;
+    left: 50%;
+    bottom: 1rem;
+    transform: translateX(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: var(--tape);
+    color: var(--tape-ink);
+    font: 700 1.25rem/1 "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+    padding: 1rem 1.6rem;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .boton-ra:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  /* Cinta métrica con las medidas reales */
+  .cinta {
+    background:
+      repeating-linear-gradient(90deg, var(--tape-ink) 0 1px, transparent 1px 10px) top left / 100% 7px no-repeat,
+      repeating-linear-gradient(90deg, var(--tape-ink) 0 2px, transparent 2px 50px) top left / 100% 14px no-repeat,
+      var(--tape);
+    color: var(--tape-ink);
+    padding: 1.1rem 1.25rem 0.9rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+  .cota { display: flex; flex-direction: column; }
+  .cota b { font-size: clamp(1.6rem, 6vw, 2.2rem); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cota span { font-size: 0.95rem; font-weight: 500; }
+
+  .aviso {
+    margin: 0;
+    padding: 0.8rem 1.25rem 1rem;
+    font-size: 1rem;
+    line-height: 1.4;
+    color: var(--muted);
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+  }
+  .aviso strong { color: var(--ink); font-weight: 500; }
+
+  /* En ordenador: QR para abrir en el móvil */
+  .movil-qr { display: none; }
+  @media (min-width: 900px) and (hover: hover) {
+    body { display: grid; grid-template-columns: 1fr 300px; grid-template-rows: auto 1fr auto auto; }
+    header, .cinta, .aviso { grid-column: 1; }
+    model-viewer { grid-column: 1; grid-row: 2; }
+    .movil-qr {
+      display: flex; flex-direction: column; justify-content: center; gap: 1rem;
+      grid-column: 2; grid-row: 1 / -1;
+      padding: 2rem; background: var(--surface); border-left: 1px solid var(--line);
+    }
+    .movil-qr p { margin: 0; font-size: 1.1rem; line-height: 1.35; }
+    #qr { background: #fff; padding: 12px; width: max-content; }
+    .boton-ra { display: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1 id="titulo">Mesilla de ejemplo</h1>
+    <p class="autor" id="autor">Ciclo de Carpintería y Mueble</p>
+  </header>
+
+  <model-viewer id="visor"
+    alt="Modelo 3D del mueble"
+    ar
+    ar-modes="webxr scene-viewer quick-look"
+    ar-scale="fixed"
+    ar-placement="floor"
+    camera-controls
+    touch-action="pan-y"
+    shadow-intensity="1"
+    exposure="1"
+    camera-orbit="35deg 70deg auto">
+    <button slot="ar-button" class="boton-ra">Ver en tu espacio a tamaño real</button>
+  </model-viewer>
+
+  <section class="cinta" aria-label="Medidas reales del modelo">
+    <div class="cota"><b id="ancho">–</b><span>ancho (mm)</span></div>
+    <div class="cota"><b id="fondo">–</b><span>fondo (mm)</span></div>
+    <div class="cota"><b id="alto">–</b><span>alto (mm)</span></div>
+  </section>
+
+  <p class="aviso" id="aviso">Gira el modelo con el dedo. Pulsa el botón amarillo y apunta al suelo hasta que aparezca el mueble.</p>
+
+  <aside class="movil-qr" aria-label="Abrir en el móvil">
+    <p>La realidad aumentada funciona en el móvil. Escanea este código para abrir este mismo mueble.</p>
+    <div id="qr"></div>
+  </aside>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const archivo = params.get('m') || 'modelos/mesilla-ejemplo.glb';
+  const nombre  = params.get('t') || 'Mesilla de ejemplo';
+  const autor   = params.get('a');
+
+  const visor = document.getElementById('visor');
+  visor.src = archivo;
+  document.getElementById('titulo').textContent = nombre;
+  document.title = nombre + ' en realidad aumentada';
+  if (autor) document.getElementById('autor').textContent = 'Diseño de ' + autor;
+
+  // Medidas reales leídas del propio modelo (glTF trabaja en metros)
+  visor.addEventListener('load', () => {
+    const d = visor.getDimensions();
+    const mm = v => Math.round(v * 1000).toLocaleString('es-ES');
+    document.getElementById('ancho').textContent = mm(d.x);
+    document.getElementById('alto').textContent  = mm(d.y);
+    document.getElementById('fondo').textContent = mm(d.z);
+
+    // Comprobación útil para el alumnado: escalas mal exportadas
+    const mayor = Math.max(d.x, d.y, d.z);
+    if (mayor > 5 || mayor < 0.05) {
+      aviso(`<strong>Revisa la escala.</strong> El modelo mide ${mm(mayor)} mm en su lado mayor, lo que no parece un mueble. Comprueba las unidades al exportar desde SketchUp.`);
+    } else if (!visor.canActivateAR && matchMedia('(hover: none)').matches) {
+      aviso('<strong>Este móvil no admite realidad aumentada.</strong> Puedes ver y girar el modelo en 3D, o probar con el móvil de un compañero.');
+    }
+  });
+
+  visor.addEventListener('error', () => {
+    aviso(`<strong>No se encuentra el modelo.</strong> Revisa que exista el archivo «${archivo}» y que el nombre del QR coincida exactamente, incluidas mayúsculas.`);
+  });
+
+  visor.addEventListener('ar-status', e => {
+    if (e.detail.status === 'failed') {
+      aviso('<strong>No se ha podido colocar el mueble.</strong> Busca un suelo con algo de textura y buena luz, y mueve el móvil despacio.');
+    }
+  });
+
+  function aviso(html) { document.getElementById('aviso').innerHTML = html; }
+
+  // QR de la página actual (solo visible en ordenador)
+  try { new QRCode(document.getElementById('qr'), { text: location.href, width: 200, height: 200 }); } catch (e) {}
+</script>
+</body>
+</html>
