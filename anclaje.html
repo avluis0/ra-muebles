@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mueble anclado a la lámina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<!--
+  VISOR CON ANCLAJE A IMAGEN
+  ──────────────────────────
+  El mueble aparece de pie sobre una lámina impresa (el marcador), a la escala que elijas.
+
+    anclaje.html?m=modelos/mesilla.glb&mk=marcadores/marcador.mind&e=10&w=150&t=Mesilla
+
+    m  = modelo .glb                      mk = marcador compilado (.mind)
+    e  = escala 1:e (1 = tamaño real)     w  = ancho de la lámina impresa, en mm
+    i  = nº de imagen dentro del .mind si compilaste varias (empieza en 0)
+    t  = título que se muestra
+
+  Por defecto: mesilla de ejemplo, marcador común, escala 1:10, lámina de 150 mm.
+  Si imprimes la lámina a otro tamaño, cambia «w» o la escala no será correcta.
+-->
+<style>
+  :root {
+    --tape: #F5C518; --tape-ink: #1A1A12;
+    --veil: rgba(20, 24, 22, 0.78); --veil-ink: #F4F1EA;
+    color-scheme: dark;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif; color: var(--veil-ink); }
+
+  .barra {
+    position: fixed; z-index: 10; left: 0; right: 0; top: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 0.75rem) 1rem 0.75rem;
+    background: var(--veil);
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  }
+  .barra h1 { margin: 0; font-size: 1.5rem; line-height: 1.1; }
+  .barra span { font-size: 1rem; white-space: nowrap; }
+
+  .pie {
+    position: fixed; z-index: 10; left: 0; right: 0; bottom: 0;
+    padding: 0.75rem 1rem calc(env(safe-area-inset-bottom, 0px) + 0.9rem);
+    display: flex; justify-content: center; gap: 0.6rem; flex-wrap: wrap;
+  }
+  .btn {
+    font-family: inherit; font-weight: 700; font-size: 1.1rem; line-height: 1;
+    padding: 0.85rem 1.2rem; border: 0; border-radius: 999px; cursor: pointer;
+    background: var(--tape); color: var(--tape-ink); box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .btn.sec { background: var(--veil); color: var(--veil-ink); }
+  .btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+  .medidas {
+    position: fixed; z-index: 10; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 4.2rem);
+    background: var(--tape); color: var(--tape-ink); padding: 0.35rem 0.8rem; font-weight: 500; font-size: 1rem;
+    white-space: nowrap; border-radius: 4px;
+  }
+
+  #escaneo {
+    position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none;
+  }
+  #escaneo .marco {
+    width: min(64vw, 300px); aspect-ratio: 1; border: 4px solid var(--tape); border-radius: 12px;
+    box-shadow: 0 0 0 100vmax rgba(0,0,0,0.25);
+    display: grid; place-items: end center;
+  }
+  #escaneo p { margin: 0 0 -3.2rem; background: var(--veil); padding: 0.5rem 0.9rem; font-size: 1.1rem; border-radius: 4px; text-align: center; }
+  #escaneo.hidden { display: none; }
+
+  .error {
+    position: fixed; inset: 0; z-index: 20; display: grid; place-content: center; gap: 1rem;
+    padding: 2rem; background: #1C211F; text-align: center; font-size: 1.2rem; line-height: 1.4;
+  }
+  .error[hidden] { display: none; }
+  .error, .inicio { white-space: pre-line; }
+  .inicio {
+    position: fixed; inset: 0; z-index: 15; display: grid; place-content: center; gap: 1.25rem;
+    padding: 2rem; background: #1C211F; text-align: center; font-size: 1.15rem; line-height: 1.4;
+  }
+  .inicio[hidden] { display: none; }
+  .inicio h2 { margin: 0; font-size: 1.8rem; line-height: 1.1; }
+  .inicio p { margin: 0; color: #C9CFC9; }
+</style>
+</head>
+<body>
+  <header class="barra">
+    <h1 id="titulo">Mueble</h1>
+    <span id="escala-txt"></span>
+  </header>
+
+  <div class="medidas" id="medidas" hidden></div>
+
+  <div id="escaneo" class="hidden">
+    <div class="marco"><p>Apunta a la lámina impresa</p></div>
+  </div>
+
+  <div class="pie">
+    <button class="btn sec" type="button" id="girar">Girar 90°</button>
+    <button class="btn" type="button" id="real" aria-pressed="false">Ver a escala 1:1</button>
+  </div>
+
+  <div class="inicio" id="inicio">
+    <h2 id="inicio-titulo">Mueble sobre la lámina</h2>
+    <p>Ten a mano la lámina impresa. El navegador te pedirá permiso para usar la cámara: pulsa «Permitir».</p>
+    <div><button class="btn" type="button" id="activar">Activar la cámara</button></div>
+  </div>
+
+  <div class="error" id="error" hidden></div>
+
+  <div id="escena"></div>
+
+<script>
+  const q = new URLSearchParams(location.search);
+  const seguro = v => (v && /^[\w\-./%]+$/.test(v) && !v.includes('..')) ? v : null;
+
+  const modelo   = seguro(q.get('m'))  || 'modelos/mesilla-ejemplo.glb';
+  const marcador = seguro(q.get('mk')) || 'marcadores/marcador.mind';
+  const indice   = Math.max(0, parseInt(q.get('i') || '0', 10) || 0);
+  const anchoMm  = Math.max(20, parseFloat(q.get('w')) || 150);
+  let   escala   = Math.max(1, parseFloat(q.get('e')) || 10);
+  const escalaInicial = escala;
+  const titulo   = q.get('t') || 'Mueble';
+
+  document.getElementById('titulo').textContent = titulo;
+  document.title = titulo + ' · anclado a la lámina';
+
+  // En MindAR, 1 unidad = ancho de la imagen marcador. El modelo viene en metros.
+  // Factor = (1 / escala) / (ancho de la lámina en metros)
+  const factor = () => 1 / (escala * anchoMm / 1000);
+  const rotuloEscala = () => document.getElementById('escala-txt').textContent =
+    (escala === 1 ? 'Tamaño real' : 'Escala 1:' + escala) + ' · lámina ' + anchoMm + ' mm';
+  rotuloEscala();
+
+  const s = factor();
+  document.getElementById('escena').innerHTML = `
+    <a-scene mindar-image="imageTargetSrc: ${marcador}; autoStart: false; uiScanning: #escaneo; uiLoading: yes; uiError: no; filterMinCF: 0.0001; filterBeta: 0.001"
+             color-space="sRGB" renderer="colorManagement: true; antialias: true"
+             vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+      <a-assets timeout="20000">
+        <a-asset-item id="mueble" src="${modelo}"></a-asset-item>
+      </a-assets>
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+      <a-entity light="type: hemisphere; color: #ffffff; groundColor: #8a7a66; intensity: 1.4"></a-entity>
+      <a-entity light="type: directional; intensity: 1.1" position="0.5 1 1.5"></a-entity>
+      <a-entity mindar-image-target="targetIndex: ${indice}">
+        <a-entity id="giro" rotation="0 0 0">
+          <a-entity id="escala" scale="${s} ${s} ${s}">
+            <a-entity rotation="90 0 0">
+              <a-gltf-model id="gltf" src="#mueble"></a-gltf-model>
+            </a-entity>
+          </a-entity>
+        </a-entity>
+      </a-entity>
+    </a-scene>`;
+
+  const gltf = document.getElementById('gltf');
+
+  // Centrar el mueble sobre la lámina y apoyarlo en ella, sea cual sea el origen de SketchUp
+  gltf.addEventListener('model-loaded', e => {
+    const obj = e.detail.model;
+    const padre = obj.parent;
+    padre.remove(obj);
+    obj.position.set(0, 0, 0);
+    obj.updateMatrixWorld(true);
+    const caja = new THREE.Box3().setFromObject(obj);
+    padre.add(obj);
+    const c = caja.getCenter(new THREE.Vector3());
+    obj.position.set(-c.x, -caja.min.y, -c.z);
+
+    const t = caja.getSize(new THREE.Vector3());
+    const mm = v => Math.round(v * 1000).toLocaleString('es-ES');
+    const m = document.getElementById('medidas');
+    m.textContent = `${mm(t.x)} × ${mm(t.z)} × ${mm(t.y)} mm (ancho × fondo × alto)`;
+    m.hidden = false;
+    if (Math.max(t.x, t.y, t.z) > 5 || Math.max(t.x, t.y, t.z) < 0.05) {
+      m.textContent = 'Revisa la escala del modelo: ' + mm(Math.max(t.x, t.y, t.z)) + ' mm';
+    }
+  });
+  gltf.addEventListener('model-error', () => fallo(`No se encuentra el modelo «${modelo}». Revisa el nombre del archivo.`));
+
+  const escena = document.querySelector('a-scene');
+  escena.addEventListener('arError', () =>
+    fallo('No se ha podido iniciar el seguimiento.\nRecarga la página y vuelve a intentarlo.'));
+
+  document.getElementById('inicio-titulo').textContent = titulo;
+
+  // ── Arranque con diagnóstico: cada fallo explica su causa ──
+  const ua = navigator.userAgent;
+  const esIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const navegadorIntegrado = /Instagram|FBAN|FBAV|WhatsApp|Line\/|MicroMessenger|Snapchat|; wv\)/i.test(ua);
+
+  document.getElementById('activar').addEventListener('click', async () => {
+    if (navegadorIntegrado) {
+      return fallo('Esta página se ha abierto dentro de otra app (lector de QR, WhatsApp…), que no deja usar la cámara.\n\n' +
+        (esIOS ? 'Pulsa el icono de compartir y elige «Abrir en Safari».' : 'Pulsa el menú ⋮ y elige «Abrir en Chrome».') +
+        '\n\nO escanea el QR con la app Cámara del móvil.');
+    }
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return fallo('La cámara solo funciona si la página se abre con https://.\nUsa la dirección de GitHub Pages, no el archivo descargado.');
+    }
+
+    // ¿Existe el marcador?
+    try {
+      const r = await fetch(marcador, { method: 'HEAD', cache: 'no-store' });
+      if (!r.ok) return fallo(`No se encuentra el marcador «${marcador}».\n\nCompílalo con compilador.html y súbelo a la carpeta marcadores/ de GitHub con ese nombre exacto.`);
+    } catch (e) { /* sin conexión: lo intentamos igualmente */ }
+
+    // Pedir permiso de cámara para obtener el motivo exacto si falla
+    try {
+      const flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      flujo.getTracks().forEach(t => t.stop());
+    } catch (e) {
+      const ayudaPermiso = esIOS
+        ? 'En el iPhone: Ajustes → Safari → Cámara → «Permitir». Después recarga la página.'
+        : 'En Chrome: pulsa el icono a la izquierda de la dirección → Permisos → Cámara → «Permitir». Después recarga la página.';
+      const motivos = {
+        NotAllowedError: 'Has denegado el permiso de cámara (o el móvil lo tiene bloqueado para el navegador).\n\n' + ayudaPermiso,
+        NotFoundError: 'No se ha encontrado ninguna cámara en este dispositivo.',
+        NotReadableError: 'La cámara está ocupada por otra app (videollamada, cámara, lector de QR…). Ciérrala y recarga la página.',
+        OverconstrainedError: 'La cámara trasera no está disponible en este dispositivo.',
+        SecurityError: 'El navegador bloquea la cámara en esta página. Ábrela con https:// en Chrome o Safari.'
+      };
+      return fallo(motivos[e.name] || ('No se ha podido abrir la cámara (' + e.name + ').\n\n' + ayudaPermiso));
+    }
+
+    document.getElementById('inicio').hidden = true;
+    const sistema = escena.systems['mindar-image-system'];
+    const arrancar = () => { try { sistema.start(); } catch (e) { fallo('No se ha podido iniciar el seguimiento: ' + e.message); } };
+    if (escena.hasLoaded) arrancar(); else escena.addEventListener('loaded', arrancar, { once: true });
+  });
+
+  // Girar el mueble sobre la lámina
+  let grados = 0;
+  document.getElementById('girar').addEventListener('click', () => {
+    grados = (grados + 90) % 360;
+    document.getElementById('giro').setAttribute('rotation', `0 0 ${grados}`);
+  });
+
+  // Alternar entre la escala del plano y tamaño real
+  const real = document.getElementById('real');
+  real.addEventListener('click', () => {
+    const activo = real.getAttribute('aria-pressed') === 'true';
+    escala = activo ? escalaInicial : 1;
+    real.setAttribute('aria-pressed', String(!activo));
+    real.textContent = activo ? 'Ver a escala 1:1' : 'Volver a 1:' + escalaInicial;
+    const f = factor();
+    document.getElementById('escala').setAttribute('scale', `${f} ${f} ${f}`);
+    rotuloEscala();
+  });
+  if (escalaInicial === 1) real.hidden = true;
+
+  function fallo(txt) { const e = document.getElementById('error'); e.textContent = txt; e.hidden = false; }
+</script>
+</body>
+</html>
